@@ -11,10 +11,12 @@ Two artifacts hold the same knowledge, and they drift apart in opposite directio
 
 | Artifact | What it is | How it changes |
 |---|---|---|
-| `ai-knowledge.md` | The business knowledge block the Shared_SFDC_Connector injects into every Salesforce answer. Read it with `get_business_glossary`. | `refresh_knowledge` pulls the latest from Notion and reconciles. Effective on the next question, no restart. |
+| `ai-knowledge.md` | The business knowledge block the Shared_SFDC_Connector injects into every Salesforce answer. Lives at the root of the `mdahl1/cubex-sfdc-connector` repo; Render redeploys the connector on every push to `main`. Read the live version with `get_business_glossary`. | Commit to the repo (direct edit), or run the **Refresh AI Knowledge** GitHub Actions workflow, which re-syncs it from Notion. Live on the next question after the redeploy, no restart. |
 | Notion: **SFDC Opportunity Field Definitions** | The canonical source. Page ID `37cf5480-ec4b-80d9-bde9-f1a0fe60d488`, in the Finance Documents DB under Finance Team. | Hand-edited by Finance, or by this skill. |
 
-Notion is canonical. `refresh_knowledge` only flows Notion into the glossary. Nothing flows the other way on its own, which is the gap this skill fills: when the user corrects something mid-conversation, that correction has to land in Notion or it evaporates the next time anyone refreshes.
+Notion is canonical. The refresh workflow only flows Notion into the glossary. Nothing flows the other way on its own, which is the gap this skill fills: when the user corrects something mid-conversation, that correction has to land in Notion or it evaporates the next time anyone refreshes.
+
+**Do not call the connector's `refresh_knowledge` MCP tool.** It is a second, in-server implementation that expects `NOTION_API_KEY` and `ANTHROPIC_API_KEY` in the Render environment, and those are deliberately not set there (the `render.yaml` says so — the keys live in GitHub repo secrets instead). It fails with a missing-key error every time. The working path is the GitHub Actions workflow below.
 
 Read `references/notion-page-map.md` before writing to Notion. It has the page anatomy, the exact table row format, and where each kind of knowledge lives.
 
@@ -24,7 +26,7 @@ Figure out which one the user wants. They often blend into each other, and it is
 
 **Read.** They want to know what the current knowledge says: the API name for a metric, whether a rule exists, what a picklist value means. Call `get_business_glossary` and answer from it. Do not guess field names from memory, and do not go straight to `describe_object`: the glossary carries the business meaning that a field description does not.
 
-**Refresh.** They want the glossary re-pulled from Notion. Call `refresh_knowledge`, then say what actually changed rather than just "done". Compare against the `get_business_glossary` output you already have if you have one, and if you do not, pull it first so you can report a real diff. A refresh that silently changes a metric definition is exactly the kind of surprise worth surfacing.
+**Refresh.** They want the glossary re-pulled from Notion. Trigger the **Refresh AI Knowledge** workflow in `mdahl1/cubex-sfdc-connector` (GitHub MCP: `actions_run_trigger` with `method: "run_workflow"`, `workflow_id: "refresh-knowledge.yml"`, `ref: "main"`, and a short `note` input saying why). The workflow fetches Notion, reconciles with Claude using the repo's own secrets, and commits `ai-knowledge.md` back to `main` only if something changed; Render redeploys on the push. Watch the run to completion (`actions_list` → `list_workflow_runs`), then report what actually changed rather than just "done": diff the sync commit, or compare a fresh `get_business_glossary` against the one you already have. A refresh that silently changes a metric definition is exactly the kind of surprise worth surfacing. No sync commit means Notion and the glossary already agreed.
 
 **Teach.** They corrected something, or want to add knowledge. This is the write-back loop below.
 
@@ -81,8 +83,10 @@ Leave page properties alone. Category, Doc name, Owner, and Type belong to Finan
 After a successful Notion write, in this order:
 
 1. Call `log_feedback` with the correction, so the connector's own improvement loop records what was wrong and what the rule now is. Do this even though you also fixed the page, because the two systems learn separately.
-2. Call `refresh_knowledge` to pull the new Notion state into `ai-knowledge.md`, so the correction is live for the next question instead of waiting for someone to refresh later.
-3. Report what changed and where: the Notion row or section, the glossary refresh, and the logged feedback. Name the field and the old and new values so the user can eyeball it.
+2. Get the same correction into `ai-knowledge.md` so it is live for the next question instead of waiting for someone to refresh later. Two ways, pick one:
+   - **Direct commit (preferred for a targeted correction):** attach `mdahl1/cubex-sfdc-connector` with `add_repo` (push access) if it is not already in the session, clone it, make the same minimal edit to `ai-knowledge.md`, commit to `main` with a message like `sync ai-knowledge.md from Notion: <what changed>`, and push. Render redeploys on the push. This matches how most sync commits in that repo's history were made.
+   - **Run the refresh workflow (preferred when Notion accumulated several edits):** trigger `refresh-knowledge.yml` as described in the Refresh mode above and let it reconcile everything at once.
+3. Report what changed and where: the Notion row or section, the glossary commit or workflow run, and the logged feedback. Name the field and the old and new values so the user can eyeball it.
 
 If the user declines the write, still call `log_feedback`. A correction you were not allowed to publish is still a correction worth recording.
 
@@ -104,5 +108,5 @@ This is a shared Finance Team document that other people and every Salesforce an
 2. `describe_object` on `Opportunity` confirms `Contract__c` exists, label "Finance Partner Contract #", type text. `Contract_Number__c` does not exist.
 3. Classification: an API name correction confirmed by `describe_object`. Direct write.
 4. Fetch the page, locate the `<tr>` block containing `Contract_Number__c`, replace that block with the corrected one.
-5. `log_feedback`, then `refresh_knowledge`.
-6. Report: row corrected in the Key Formulas table, glossary refreshed, feedback logged, `Contract__c` verified against the Opportunity object.
+5. `log_feedback`, then apply the same one-line fix to `ai-knowledge.md` in `cubex-sfdc-connector` and push to `main`.
+6. Report: row corrected in the Key Formulas table, glossary commit pushed (live after the Render redeploy), feedback logged, `Contract__c` verified against the Opportunity object.
