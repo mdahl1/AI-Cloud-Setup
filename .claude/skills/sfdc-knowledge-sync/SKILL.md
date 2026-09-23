@@ -21,6 +21,12 @@ Notion is canonical. The refresh workflow only flows Notion into the glossary. N
 
 Read `references/notion-page-map.md` before writing to Notion. It has the page anatomy, the exact table row format, and where each kind of knowledge lives.
 
+## Who may write
+
+Michael Dahl (mdahl@mashura.com; GitHub `mdahl1` / `mdahl-mashura`) is the sole approver for changes to the canonical Notion page and to `ai-knowledge.md`. Check the session's user identity before entering the write-back loop.
+
+If the session's user is anyone else, Read mode and Refresh-status questions work normally, but do NOT write to the Notion page or the connector repo, even for corrections that pass verification. Instead, capture the correction with `log_feedback`, prefixed "PROPOSAL from <user>: ", with everything Michael needs to approve it: the object, field, old and new values, and the user's reasoning. Then tell the user their correction was recorded as a proposal for Michael Dahl to review, and that stating it to him directly will get it in faster. This is not a technical control (GitHub and Notion permissions are the real enforcement); it is the intended workflow, and following it keeps proposals from dying in conversations.
+
 ## Three modes
 
 Figure out which one the user wants. They often blend into each other, and it is fine to do all three in one pass.
