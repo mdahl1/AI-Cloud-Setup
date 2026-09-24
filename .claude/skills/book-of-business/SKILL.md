@@ -87,7 +87,7 @@ Re-run step 3 with `--resolve /home/claude/bob/resolutions.json`, then recalc ag
 Present the file, then give:
 - One line: site count, total MRR, excluded sites, flagged exceptions.
 - A short exceptions list grouped by type: validation failures, missing data, excluded sites with their
-  held rows, Expansion rows kept, HQ rows moved, casing to confirm, renewals not yet started.
+  held rows, Expansion rows kept, HQ rows moved, casing to confirm, renewals not yet started, expired contracts.
   Keep it scannable; the full detail is in the summary JSON if they ask.
 
 Total mismatches against Customer Total Monthly Amount are expected on multi-unit contracts. Report

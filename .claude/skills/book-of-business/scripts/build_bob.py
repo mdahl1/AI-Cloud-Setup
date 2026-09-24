@@ -77,7 +77,10 @@ def add_months(d, m):
 
 
 def months_between(a, b):
-    return (b.year - a.year) * 12 + (b.month - a.month) + (1 if b.day >= a.day - 1 else 0)
+    # whole months from start a through end b inclusive: 1/15/2024 to 1/14/2027 = 36
+    d = b + dt.timedelta(days=1)
+    m = (d.year - a.year) * 12 + (d.month - a.month)
+    return m - 1 if d.day < a.day else m
 
 
 def key(name):
@@ -359,6 +362,9 @@ def build(rows, today, smap, resolve):
         if not is_ren and r["c_end"] and r["c_end"] < today:
             flags.append({"kind": "expired_no_renewal", "row_id": r["row_id"], "site": r["site_display"],
                           "asset": r["asset"], "detail": f"Contract ended {r['c_end']:%-m/%-d/%Y}; no renewal found."})
+        if is_ren and r["r_end"] and r["r_end"] < today:
+            flags.append({"kind": "expired_renewal", "row_id": r["row_id"], "site": r["site_display"],
+                          "asset": r["asset"], "detail": f"Renewal ended {r['r_end']:%-m/%-d/%Y}; no later renewal found."})
 
     # --- Blocks
     blocks = OrderedDict()
@@ -451,11 +457,11 @@ def validate(blocks, excluded, raw_count, smap):
     fails = []
     for b in blocks:
         tot = sum(l["price"] or 0 for l in b["rows"])
-        ctm = {round(num(l.get("cust_total_monthly")) or -1, 2) for l in b["rows"]}
+        ctm = {round(v, 2) for v in (num(l.get("cust_total_monthly")) for l in b["rows"]) if v is not None}
         b["total"] = round(tot, 2)
-        if not any(abs(tot - c) <= 0.01 for c in ctm if c >= 0):
+        if not any(abs(tot - c) <= 0.01 for c in ctm):
             fails.append({"check": "total_ties_to_customer_total_monthly", "site": b["site"],
-                          "block_total": round(tot, 2), "customer_total_monthly_values": sorted(c for c in ctm if c >= 0),
+                          "block_total": round(tot, 2), "customer_total_monthly_values": sorted(ctm),
                           "note": "Expected on multi-unit contracts. Flagged, not fixed."})
         hw = b["rows"][0]
         if (hw["c_start"] is None and (s(hw.get("commence")) or s(hw.get("orig_commence")))) or \

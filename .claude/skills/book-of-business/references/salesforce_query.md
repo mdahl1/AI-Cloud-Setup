@@ -52,17 +52,17 @@ list of `Opportunity.AccountId IN (...)` filters, split so each query stays shor
 
 ```sql
 SELECT COUNT(Id) n FROM OpportunityLineItem
-WHERE <HIERARCHY> AND <STAGE> AND <ACTIVE>
+WHERE <HIERARCHY> AND <STAGE>
 ```
 
 - `<HIERARCHY>` = one clause from `account_clauses`. With more than one clause, run the size
   check once per clause; `n` is the sum.
 - `<STAGE>` = `Opportunity.StageName IN ('Closed Won','Closed Won - Deferred')`
-- `<ACTIVE>` = `(Opportunity.Contract_End_Date__c >= TODAY OR Opportunity.Contract_End_Date__c = null)`
 
-Filtering to active contracts is safe: renewal rows carry the original term themselves
-(`Originating_Oppty_Contract_Start_Date__c` / `_End_Date__c`), and an original whose renewal has
-not started yet is still active, so it is still pulled for the price rule.
+Do not filter on contract end date. Ended contracts are kept and flagged by the builder
+(`references/rules.md`), and the report export route includes them, so filtering here would make
+the two routes give different workbooks. Superseded originals are also needed for the renewal
+chain and price rules.
 
 There is no row limit. `n` sets how many rows the pull must return. Every row returned by
 `run_soql` passes through the conversation twice (once as the result, once written to disk), so
@@ -99,7 +99,7 @@ SELECT Id, OpportunityId, Opportunity.Name, Opportunity.CloseDate, Opportunity.S
   Net_Sales_Price__c, Tier_1_Price__c, Tier_1_Duration__c, Tier_2_Price__c, Tier_2_Duration__c,
   Item_Net_Price__c
 FROM OpportunityLineItem
-WHERE <HIERARCHY> AND <STAGE> AND <ACTIVE>
+WHERE <HIERARCHY> AND <STAGE>
 ORDER BY Id LIMIT 200
 ```
 

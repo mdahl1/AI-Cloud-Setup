@@ -9,7 +9,9 @@ If a rule here and the script disagree, the rule wins: fix the script, do not wo
 - A site with several concurrent hardware rows lists all hardware rows first, then fee rows.
 - Expansion rows are judged per opportunity: kept if any line carries a serial found on no other row.
 - Renewal not yet started: price comes from the original line; Contract # and Financing Partner stay the renewal line's own.
-- Non-renewal rows whose contract has ended are kept and flagged ("expired_no_renewal"), not dropped.
+- Rows whose contract has ended are kept and flagged, not dropped: "expired_no_renewal" for a
+  non-renewal past its contract end, "expired_renewal" for a renewal past its renewal end. Both
+  routes (report export and live pull) include these rows, so they give the same result.
 
 ## Output
 One sheet, "Master List". Columns: Account Name, Asset Name, Go Live Date, Contract Start Date,
