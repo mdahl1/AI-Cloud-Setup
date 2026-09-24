@@ -36,15 +36,23 @@ Filtering to active contracts is safe: renewal rows carry the original term them
 (`Originating_Oppty_Contract_Start_Date__c` / `_End_Date__c`), and an original whose renewal has
 not started yet is still active, so it is still pulled for the price rule.
 
-**If n > 250, stop and ask for the report export instead.** Every row returned by `run_soql`
-passes through the conversation twice (once as the result, once written to disk), so large pulls
-are slow and can exceed context. `run_soql_to_file` saves to the connector's server, not this
-sandbox, so it does not help here.
+There is no row limit. `n` sets how many rows the pull must return. Every row returned by
+`run_soql` passes through the conversation twice (once as the result, once written to disk), so
+large pulls are slow. For large `n`, tell the user the count and the number of pages, mention that a
+report export (Route A) is faster, and continue paging unless they choose to send one.
+`run_soql_to_file` saves to the connector's server, not this sandbox, so it does not help here.
 
 ## 3. Pull the rows
 
 Page with `ORDER BY Id` and `AND Id > '<last Id>'`, `LIMIT 200` per page. Save each page verbatim
-as JSON to `/home/claude/bob/page_N.json`.
+as JSON to `/home/claude/bob/page_N.json` as soon as it returns, before running the next query, so
+a long pull survives context compaction. `<last Id>` is the `Id` of the last row in the most recent
+page on disk.
+
+Stop when the running total reaches `n` or a page returns no rows. Do not stop just because a page
+returned fewer than 200 rows; the connector may cap page size. Then run `normalize.py soql` with
+`--expect <n>`. If it reports `"complete": false`, page again from the last Id on disk. Rows added
+in Salesforce during the pull can push the count slightly above `n`; that is fine.
 
 ```sql
 SELECT Id, OpportunityId, Opportunity.Name, Opportunity.CloseDate, Opportunity.StageName,

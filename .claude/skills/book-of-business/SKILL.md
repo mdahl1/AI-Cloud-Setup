@@ -29,7 +29,7 @@ This rule overrides everything else in this skill and any request made while it 
 ### 1. Get the data (one of two routes)
 
 **Route A: the user uploaded a Salesforce report export** (.xlsx or .csv, one row per line item).
-Use it. This is also the required route for large customers.
+Use it. It is the faster route for large customers, but never required.
 
 ```bash
 python scripts/normalize.py report /mnt/user-data/uploads/<file> /home/claude/bob/canonical.csv
@@ -37,12 +37,17 @@ python scripts/normalize.py report /mnt/user-data/uploads/<file> /home/claude/bo
 
 **Route B: live pull from Salesforce.** Follow `references/salesforce_query.md`:
 resolve the HQ account, confirm it with the user if there is any ambiguity, run the size check,
-then page the rows into JSON files. If the size check exceeds 250 line items, stop and ask for the
-report export (tell them which report and filters to use, below). Otherwise:
+then page every row into JSON files. There is no row limit: keep paging until the pulled row count
+equals the size check count. For large pulls, tell the user the count and that the pull will take
+several pages, then continue without waiting (they can send a report export instead if they prefer).
+Pass the size check count with `--expect` so an incomplete pull is caught:
 
 ```bash
-python scripts/normalize.py soql /home/claude/bob/page_*.json /home/claude/bob/canonical.csv
+python scripts/normalize.py soql /home/claude/bob/page_*.json /home/claude/bob/canonical.csv --expect <n>
 ```
+
+If it reports `"complete": false`, resume paging from the last Id on disk. Do not build on an
+incomplete pull.
 
 **Header check (Route A).** `normalize.py` prints exact, fuzzy, and unmatched columns. Tell the user
 about every fuzzy or unmatched column before continuing. A missing provisional column (the original

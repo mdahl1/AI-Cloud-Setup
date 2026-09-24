@@ -7,11 +7,15 @@ Two input modes, same output (canonical CSV):
   report  A Salesforce report export (.csv or .xlsx), one row per line item.
           Headers are matched by closest text, not exact string.
   soql    One or more JSON files holding run_soql results (a list of rows, or
-          {"rows": [...]}) from the query in references/salesforce_query.md.
+          {"rows": [...]} or {"records": [...]}) from the query in
+          references/salesforce_query.md. No row limit; pass every page.
 
 Usage:
   python normalize.py report <export.xlsx|csv> <out.csv>
-  python normalize.py soql <page1.json> [page2.json ...] <out.csv>
+  python normalize.py soql <page1.json> [page2.json ...] <out.csv> [--expect N]
+
+--expect N  the COUNT(Id) from the size check. Reports "complete": false
+            if fewer unique rows were loaded, so a partial pull is caught.
 
 Prints a JSON header report: matched, fuzzy-matched, and unmatched columns.
 Fuzzy and unmatched columns MUST be shown to the user before building.
@@ -177,7 +181,13 @@ def write(rows, out):
 def main():
     if len(sys.argv) < 4:
         print(__doc__); sys.exit(1)
-    mode, *ins, out = sys.argv[1:]
+    args, expect = sys.argv[1:], None
+    if "--expect" in args:
+        i = args.index("--expect")
+        expect = int(args[i + 1]); del args[i:i + 2]
+    if len(args) < 3:
+        print(__doc__); sys.exit(1)
+    mode, *ins, out = args
     if mode == "report":
         headers, data = read_report(ins[0])
         mapping, rep = match_headers(headers)
@@ -191,15 +201,25 @@ def main():
         rows, seen = [], set()
         for p in ins:
             d = json.load(open(p))
-            d = d.get("rows", d) if isinstance(d, dict) else d
+            if isinstance(d, dict):
+                d = d.get("rows", d.get("records", []))
             for r in d:
-                if r.get("Id") in seen:
+                rid = r.get("Id")
+                if rid and rid in seen:
                     continue
-                seen.add(r.get("Id")); rows.append(soql_row(r))
+                if rid:
+                    seen.add(rid)
+                rows.append(soql_row(r))
         write(rows, out)
-        print(json.dumps({"mode": "soql", "rows": len(rows),
-                          "note": "Original contract dates mapped from Originating Oppty Contract Start/End Date (confirm)."},
-                         indent=2))
+        rep = {"mode": "soql", "pages": len(ins), "rows": len(rows),
+               "note": "Original contract dates mapped from Originating Oppty Contract Start/End Date (confirm)."}
+        if expect is not None:
+            rep["expected"] = expect
+            rep["complete"] = len(rows) >= expect
+            if not rep["complete"]:
+                rep["missing_rows"] = expect - len(rows)
+                rep["resume_after_id"] = max(seen) if seen else None
+        print(json.dumps(rep, indent=2))
     else:
         print(__doc__); sys.exit(1)
 
