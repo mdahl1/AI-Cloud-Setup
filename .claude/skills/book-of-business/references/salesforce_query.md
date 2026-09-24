@@ -18,17 +18,45 @@ Always confirm with the user before pulling when any of these are true:
 - More than one plausible HQ (for example a veterinary group and a dental group with the same name).
 - Accounts whose names match the customer but have no ParentId, or a ParentId outside the HQ's tree.
   List them and ask whether to include them. They will not be pulled by the hierarchy filter.
+  If the user says to include one, add its Id to `<HIERARCHY>` as an extra clause.
 
 Do not select `Account_Type__c` on Account (it returns HTTP 400). It lives on Opportunity.
 
-## 2. Size check (always run first)
+## 2. Walk the account tree (any depth)
+
+Hierarchies can nest to any depth, and a fixed `Account.Parent.Parent...` filter cannot follow
+them, so collect every account under the HQ first, one level at a time:
+
+```bash
+python scripts/hierarchy.py <HQ Id>
+```
+
+It prints `next_parent_clauses`. For each clause, run and save the result (page with
+`AND Id > '<last Id>'` if a level returns 2,000 rows) to `/home/claude/bob/level_<next_level>.json`
+(`level_<N>_2.json` and so on for extra pages or clauses):
+
+```sql
+SELECT Id, Name, ParentId FROM Account WHERE <parent clause> ORDER BY Id
+```
+
+Re-run with all level files until it prints `"done": true`:
+
+```bash
+python scripts/hierarchy.py <HQ Id> /home/claude/bob/level_*.json > /home/claude/bob/accounts.json
+```
+
+Report any `problems`. Tell the user the account count and deepest level. `account_clauses` is a
+list of `Opportunity.AccountId IN (...)` filters, split so each query stays short.
+
+## 3. Size check (always run first)
 
 ```sql
 SELECT COUNT(Id) n FROM OpportunityLineItem
 WHERE <HIERARCHY> AND <STAGE> AND <ACTIVE>
 ```
 
-- `<HIERARCHY>` = `(Opportunity.AccountId = '<HQ>' OR Opportunity.Account.ParentId = '<HQ>' OR Opportunity.Account.Parent.ParentId = '<HQ>')`
+- `<HIERARCHY>` = one clause from `account_clauses`. With more than one clause, run the size
+  check once per clause; `n` is the sum.
 - `<STAGE>` = `Opportunity.StageName IN ('Closed Won','Closed Won - Deferred')`
 - `<ACTIVE>` = `(Opportunity.Contract_End_Date__c >= TODAY OR Opportunity.Contract_End_Date__c = null)`
 
@@ -42,12 +70,13 @@ large pulls are slow. For large `n`, tell the user the count and the number of p
 report export (Route A) is faster, and continue paging unless they choose to send one.
 `run_soql_to_file` saves to the connector's server, not this sandbox, so it does not help here.
 
-## 3. Pull the rows
+## 4. Pull the rows
 
-Page with `ORDER BY Id` and `AND Id > '<last Id>'`, `LIMIT 200` per page. Save each page verbatim
-as JSON to `/home/claude/bob/page_N.json` as soon as it returns, before running the next query, so
+Run the pull once per clause in `account_clauses`. Page with `ORDER BY Id` and
+`AND Id > '<last Id>'`, `LIMIT 200` per page. Save each page verbatim as JSON to
+`/home/claude/bob/page_<clause>_<N>.json` as soon as it returns, before running the next query, so
 a long pull survives context compaction. `<last Id>` is the `Id` of the last row in the most recent
-page on disk.
+page on disk for that clause.
 
 Stop when the running total reaches `n` or a page returns no rows. Do not stop just because a page
 returned fewer than 200 rows; the connector may cap page size. Then run `normalize.py soql` with
